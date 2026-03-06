@@ -1,0 +1,2272 @@
+-- 加载 NothingLibrary
+local NothingLibrary = loadstring(game:HttpGetAsync('https://raw.githubusercontent.com/3345-c-a-t-s-u-s/NOTHING/main/source.lua'))();
+
+-- 创建主窗口
+local Windows = NothingLibrary.new({
+	Title = "农民cr",
+	Description = "整合版功能",
+	Keybind = Enum.KeyCode.LeftControl,
+	Logo = 'http://www.roblox.com/asset/?id=18898582662'
+})
+
+-- ==================== 必要服务 ====================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local soundService = game:GetService("SoundService")
+local debris = game:GetService("Debris")
+
+-- ==================== 环境函数（用于无坠落伤害） ====================
+local hookmetamethod = hookmetamethod or debug and debug.hookmetamethod
+local checkcaller = checkcaller or function() return false end
+local getnamecallmethod = getnamecallmethod or function() return nil end
+
+-- ==================== 阿多尼斯反作弊绕过 ====================
+repeat task.wait() until game:IsLoaded()
+local function isAdonisAC(tab)
+    return rawget(tab,"Detected") and typeof(rawget(tab,"Detected"))=="function" and rawget(tab,"RLocked")
+end
+for _,v in next,getgc(true) do
+    if typeof(v)=="table" and isAdonisAC(v) then
+        for i,f in next,v do
+            if rawequal(i,"Detected") then
+                local old
+                old=hookfunction(f,function(action,info,crash)
+                    if rawequal(action,"_") and rawequal(info,"_") and rawequal(crash,false) then
+                        return old(action,info,crash)
+                    end
+                    return task.wait(9e9)
+                end)
+                warn("bypassed")
+                break
+            end
+        end
+    end
+end
+for _,v in pairs(getgc(true)) do
+    if type(v)=="table" then
+        local func=rawget(v,"DTXC1")
+        if type(func)=="function" then
+            hookfunction(func,function() return end)
+            break
+        end
+    end
+end
+
+-- ==================== 字体下载（用于Ragebot命中提示框） ====================
+local function downloadFont()
+    local v2 = "Font_" .. tostring(math.random(10000, 99999))
+    local v24 = "Folder_" .. tostring(math.random(10000, 99999))
+    if isfolder("UI_Fonts") then delfolder("UI_Fonts") end
+    makefolder(v24)
+    local v3 = v24 .. "/" .. v2 .. ".ttf"
+    local v4 = v24 .. "/" .. v2 .. ".json"
+
+    local success, body = pcall(function()
+        return game:HttpGet("https://github.com/i77lhm/storage/blob/main/fonts/smallest_pixel-7.ttf?raw=true")
+    end)
+
+    if success then
+        writefile(v3, body)
+    else
+        return Font.fromEnum(Enum.Font.Code)
+    end
+
+    local v16 = {
+        name = v2,
+        faces = {{
+            name = "Regular",
+            weight = 400,
+            style = "Normal",
+            assetId = getcustomasset(v3)
+        }}
+    }
+    writefile(v4, HttpService:JSONEncode(v16))
+    return Font.new(getcustomasset(v4))
+end
+local CustomFont = downloadFont()
+
+-- ==================== Ragebot 配置表 ====================
+ConfigTable = {
+    Ragebot = {
+        Enabled = false,               -- 总开关
+        RapidFire = false,              -- 快速射击
+        FireRate = 30,                   -- 射速
+        Prediction = true,                -- 预测
+        PredictionAmount = 0.12,          -- 预测量
+        TeamCheck = false,                -- 忽略队友
+        VisibilityCheck = true,            -- 可见性检查
+        Wallbang = true,                   -- 墙射开关
+        Tracers = true,                    -- 弹道轨迹
+        TracerColor = Color3.fromRGB(255, 0, 0),
+        TracerWidth = 1,
+        TracerLifetime = 3,
+        ShootRange = 15,                   -- 墙射射出点搜索半径
+        HitRange = 15,                      -- 墙射命中点搜索半径
+        HitNotify = true,                   -- 命中提示框
+        AutoReload = true,                   -- 自动装填
+        HitSound = true,                      -- 命中音效
+        HitColor = Color3.fromRGB(255, 182, 193),
+        UseTargetList = true,                 -- 启用目标列表
+        UseWhitelist = true,                   -- 启用白名单
+        HitNotifyDuration = 5,                 -- 提示框显示时间
+        LowHealthCheck = false,                 -- 忽略低血量
+        SelectedHitSound = "Skeet",              -- 音效类型
+        FriendCheck = false,                      -- 忽略好友
+        MaxTarget = 0,                             -- 最大目标数
+        TracerTexture = "rbxassetid://7136858729", -- 轨迹纹理
+        Keybind = Enum.KeyCode.E                    -- 快捷键
+    }
+}
+
+-- ==================== Ragebot 专属列表 ====================
+RagebotTargetList = {}      -- 只瞄准这些玩家
+RagebotWhitelist = {}       -- 忽略这些玩家
+
+local function tableContains(t, value)
+    for _, v in ipairs(t) do if v == value then return true end end
+    return false
+end
+
+-- ==================== Ragebot 性能缓存 ====================
+local PerformanceCache = {
+    TargetResults = {},
+    RaycastResults = {},
+    WallbangResults = {},
+    RapidFireCache = {
+        lastShootPos = nil,
+        lastHitPos = nil,
+        lastTarget = nil,
+        lastUpdate = 0,
+        cacheDuration = 0.5,
+        hitCount = 0,
+        lastSuccessfulShot = 0
+    },
+    LastTargetUpdate = 0,
+    LastRaycastCleanup = 0,
+    TargetUpdateInterval = 0.03,
+    RaycastCacheDuration = 0.05,
+}
+
+-- ==================== Ragebot 命中提示框管理 ====================
+local hitNotifications = {}
+local function createHitNotification(playerName, health, distance, fromCache)
+    if not ConfigTable.Ragebot.HitNotify then return end
+
+    local ScreenGui = CoreGui:FindFirstChild("HitNotifications") or Instance.new("ScreenGui")
+    ScreenGui.Name = "HitNotifications"
+    ScreenGui.Parent = CoreGui
+
+    local scrollFrame = ScreenGui:FindFirstChild("NotificationScroll") or Instance.new("ScrollingFrame")
+    scrollFrame.Name = "NotificationScroll"
+    scrollFrame.Parent = ScreenGui
+    scrollFrame.BackgroundTransparency = 1
+    scrollFrame.Size = UDim2.new(0, 600, 0, 400)
+    scrollFrame.Position = UDim2.new(0, 30, 0, 10)
+    scrollFrame.ScrollingEnabled = false
+    scrollFrame.ScrollBarThickness = 0
+    scrollFrame.ClipsDescendants = false
+
+    local THEME_COLOR = Color3.fromRGB(30, 30, 30)
+    local THEME_TRANSPARENCY = 0.5
+    local GLOW_WIDTH = 20
+    local HIT_COLOR = ConfigTable.Ragebot.HitColor
+
+    local box = Instance.new("Frame")
+    box.Parent = scrollFrame
+    box.BackgroundColor3 = THEME_COLOR
+    box.BackgroundTransparency = THEME_TRANSPARENCY
+    box.BorderSizePixel = 0
+
+    local function createGlow(side)
+        local glow = Instance.new("Frame")
+        glow.Size = UDim2.new(0, GLOW_WIDTH, 1, 0)
+        glow.Position = (side == "Left") and UDim2.new(0, -GLOW_WIDTH, 0, 0) or UDim2.new(1, 0, 0, 0)
+        glow.BackgroundColor3 = THEME_COLOR
+        glow.BackgroundTransparency = THEME_TRANSPARENCY
+        glow.BorderSizePixel = 0
+        glow.Parent = box
+        local grad = Instance.new("UIGradient")
+        grad.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, (side == "Left" and 1 or 0)), NumberSequenceKeypoint.new(1, (side == "Left" and 0 or 1))})
+        grad.Parent = glow
+    end
+    createGlow("Left")
+    createGlow("Right")
+
+    local parts = {
+        {"hit ", Color3.fromRGB(255, 255, 255)},
+        {playerName .. " ", HIT_COLOR},
+        {"on head ", Color3.fromRGB(255, 255, 255)},
+        {"Health at ", Color3.fromRGB(200, 200, 200)},
+        {tostring(health) .. " ", Color3.fromRGB(0, 255, 120)},
+        {"in ", Color3.fromRGB(200, 200, 200)},
+        {string.format("%.2f", distance) .. " ", HIT_COLOR}
+    }
+    if fromCache then
+        table.insert(parts, {" via cache", Color3.fromRGB(150, 150, 150)})
+    end
+
+    local offsetX = 8
+    local totalW, maxH = 0, 0
+    for _, seg in ipairs(parts) do
+        local label = Instance.new("TextLabel")
+        label.Parent = box
+        label.BackgroundTransparency = 1
+        label.BorderSizePixel = 0
+        label.TextColor3 = seg[2]
+        label.FontFace = CustomFont
+        label.TextSize = 10
+        label.Text = seg[1]
+        label.AutomaticSize = Enum.AutomaticSize.XY
+
+        label.Position = UDim2.new(0, offsetX, 0, 0)
+        local xSize = label.TextBounds.X
+        offsetX = offsetX + xSize
+        totalW = offsetX
+        maxH = math.max(maxH, label.TextBounds.Y)
+    end
+
+    box.Size = UDim2.new(0, totalW + 8, 0, maxH + 4)
+    table.insert(hitNotifications, {box = box, createTime = tick()})
+
+    local function updateScrollFrame()
+        local currentY = 0
+        for i, notif in ipairs(hitNotifications) do
+            if notif.box and notif.box.Parent then
+                notif.box.Position = UDim2.new(0, GLOW_WIDTH, 0, currentY)
+                currentY = currentY + notif.box.AbsoluteSize.Y + 4
+            end
+        end
+    end
+
+    updateScrollFrame()
+
+    task.delay(ConfigTable.Ragebot.HitNotifyDuration, function()
+        for i, notif in ipairs(hitNotifications) do
+            if notif.box == box then
+                table.remove(hitNotifications, i)
+                box:Destroy()
+                break
+            end
+        end
+        updateScrollFrame()
+    end)
+end
+
+-- ==================== Ragebot 命中音效 ====================
+local function playHitSound()
+    if not ConfigTable.Ragebot.HitSound then return end
+    local soundIds = {
+        Skeet = "rbxassetid://5633695679",
+        Neverlose = "rbxassetid://6534948092",
+        Fatality = "rbxassetid://6534947869",
+        Argo = "rbxassetid://102651850556408",
+        Bameware = "rbxassetid://3124331820",
+        Bell = "rbxassetid://6534947240",
+        Bubble = "rbxassetid://6534947588",
+        Pop = "rbxassetid://198598793",
+        Rust = "rbxassetid://1255040462",
+        Sans = "rbxassetid://3188795283",
+        Minecraft = "rbxassetid://4018616850",
+        xp = "rbxassetid://17148249625"
+    }
+    local soundId = soundIds[ConfigTable.Ragebot.SelectedHitSound] or soundIds.Skeet
+    local sound = Instance.new("Sound")
+    sound.SoundId = soundId
+    sound.Volume = 0.75
+    sound.Parent = Workspace
+    sound:Play()
+    debris:AddItem(sound, 0.75)
+end
+
+-- ==================== Ragebot 弹道轨迹 ====================
+local function createTracer(startPos, endPos)
+    if not ConfigTable.Ragebot.Tracers then return end
+
+    local tracerModel = Instance.new("Model")
+    tracerModel.Name = "TracerBeam"
+
+    local beam = Instance.new("Beam")
+    beam.Color = ColorSequence.new(ConfigTable.Ragebot.TracerColor)
+    beam.Width0 = ConfigTable.Ragebot.TracerWidth
+    beam.Width1 = ConfigTable.Ragebot.TracerWidth
+    beam.Texture = ConfigTable.Ragebot.TracerTexture
+    beam.TextureSpeed = 1
+    beam.Brightness = 2
+    beam.LightEmission = 2
+    beam.FaceCamera = true
+
+    local a0 = Instance.new("Attachment")
+    local a1 = Instance.new("Attachment")
+    a0.WorldPosition = startPos
+    a1.WorldPosition = endPos
+
+    beam.Attachment0 = a0
+    beam.Attachment1 = a1
+    beam.Parent = tracerModel
+    a0.Parent = tracerModel
+    a1.Parent = tracerModel
+    tracerModel.Parent = Workspace
+
+    local tweenInfo = TweenInfo.new(ConfigTable.Ragebot.TracerLifetime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(beam, tweenInfo, {Brightness = 0, Width0 = 0, Width1 = 0})
+    tween:Play()
+
+    tween.Completed:Connect(function()
+        if tracerModel then tracerModel:Destroy() end
+    end)
+
+    task.delay(ConfigTable.Ragebot.TracerLifetime + 0.1, function()
+        if tracerModel and tracerModel.Parent then tracerModel:Destroy() end
+    end)
+end
+
+-- ==================== Ragebot 工具函数 ====================
+local function getCurrentTool()
+    if LocalPlayer.Character then
+        for _, tool in pairs(LocalPlayer.Character:GetChildren()) do
+            if tool:IsA("Tool") then
+                return tool
+            end
+        end
+    end
+    return nil
+end
+
+-- ==================== Ragebot 自动装填 ====================
+local instantReloadConnections = {}
+local characterAddedConnection = nil
+
+local function autoReload()
+    if not ConfigTable.Ragebot.AutoReload then
+        if instantReloadConnections then
+            for _,conn in pairs(instantReloadConnections) do
+                if conn then conn:Disconnect() end
+            end
+            instantReloadConnections = {}
+        end
+        if characterAddedConnection then
+            characterAddedConnection:Disconnect()
+            characterAddedConnection = nil
+        end
+        return
+    end
+
+    if not instantReloadConnections then
+        instantReloadConnections = {}
+    end
+
+    local tool = getCurrentTool()
+    if not tool then return end
+
+    local values = tool:FindFirstChild("Values")
+    if not values then return end
+
+    local ammo = values:FindFirstChild("SERVER_Ammo")
+    local storedAmmo = values:FindFirstChild("SERVER_StoredAmmo")
+    if not ammo or not storedAmmo then return end
+
+    for _,conn in pairs(instantReloadConnections) do
+        if conn then conn:Disconnect() end
+    end
+    instantReloadConnections = {}
+
+    if characterAddedConnection then
+        characterAddedConnection:Disconnect()
+        characterAddedConnection = nil
+    end
+
+    local gunR_remote = ReplicatedStorage:WaitForChild("Events"):WaitForChild("GNX_R")
+    local me = LocalPlayer
+
+    local function setupToolListeners(toolObj)
+        if not toolObj or not toolObj:FindFirstChild("IsGun") then return end
+
+        local values = toolObj:FindFirstChild("Values")
+        if not values then return end
+
+        local ammo = values:FindFirstChild("SERVER_Ammo")
+        local storedAmmo = values:FindFirstChild("SERVER_StoredAmmo")
+        if not ammo or not storedAmmo then return end
+
+        local conn1 = storedAmmo:GetPropertyChangedSignal("Value"):Connect(function()
+            if ConfigTable.Ragebot.AutoReload then
+                gunR_remote:FireServer(tick(), "KLWE89U0", toolObj)
+            end
+        end)
+
+        if storedAmmo.Value ~= 0 then
+            gunR_remote:FireServer(tick(), "KLWE89U0", toolObj)
+        end
+
+        local conn2 = ammo:GetPropertyChangedSignal("Value"):Connect(function()
+            if ConfigTable.Ragebot.AutoReload and storedAmmo.Value ~= 0 then
+                gunR_remote:FireServer(tick(), "KLWE89U0", toolObj)
+            end
+        end)
+
+        table.insert(instantReloadConnections, conn1)
+        table.insert(instantReloadConnections, conn2)
+    end
+
+    local char = me.Character
+    if char then
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then
+            setupToolListeners(tool)
+        end
+
+        local conn3 = char.ChildAdded:Connect(function(obj)
+            if obj:IsA("Tool") then
+                setupToolListeners(obj)
+            end
+        end)
+        table.insert(instantReloadConnections, conn3)
+    end
+
+    characterAddedConnection = me.CharacterAdded:Connect(function(charr)
+        repeat task.wait() until charr and charr.Parent
+        local conn4 = charr.ChildAdded:Connect(function(obj)
+            if obj:IsA("Tool") then
+                setupToolListeners(obj)
+            end
+        end)
+        table.insert(instantReloadConnections, conn4)
+    end)
+end
+
+-- ==================== Ragebot 可见性检查（带缓存） ====================
+local function canSeeTarget(targetPart)
+    if not ConfigTable.Ragebot.VisibilityCheck then return true end
+
+    local localHead = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+    if not localHead then return false end
+
+    local cacheKey = tostring(targetPart) .. tostring(localHead)
+    local currentTime = tick()
+
+    if PerformanceCache.RaycastResults[cacheKey] then
+        local cached = PerformanceCache.RaycastResults[cacheKey]
+        if currentTime - cached.time < PerformanceCache.RaycastCacheDuration then
+            return cached.result
+        end
+    end
+
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+
+    local startPos = localHead.Position
+    local endPos = targetPart.Position
+    local direction = (endPos - startPos)
+    local distance = direction.Magnitude
+
+    local raycastResult = Workspace:Raycast(startPos, direction.Unit * distance, raycastParams)
+    local visible = true
+
+    if raycastResult then
+        local hitPart = raycastResult.Instance
+        if hitPart and hitPart.CanCollide then
+            local model = hitPart:FindFirstAncestorOfClass("Model")
+            if model then
+                local humanoid = model:FindFirstChild("Humanoid")
+                if humanoid then
+                    local targetPlayer = Players:GetPlayerFromCharacter(model)
+                    if targetPlayer then
+                        visible = true
+                    else
+                        visible = false
+                    end
+                else
+                    visible = false
+                end
+            else
+                visible = false
+            end
+        end
+    end
+
+    PerformanceCache.RaycastResults[cacheKey] = {
+        result = visible,
+        time = currentTime
+    }
+
+    if currentTime - PerformanceCache.LastRaycastCleanup > 5 then
+        local keys = {}
+        for k, v in pairs(PerformanceCache.RaycastResults) do
+            if currentTime - v.time > PerformanceCache.RaycastCacheDuration then
+                table.insert(keys, k)
+            end
+        end
+        for _, k in ipairs(keys) do
+            PerformanceCache.RaycastResults[k] = nil
+        end
+        PerformanceCache.LastRaycastCleanup = currentTime
+    end
+
+    return visible
+end
+
+-- ==================== Ragebot 检查两点间是否无障碍 ====================
+local function checkClearPath(startPos, endPos)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+
+    local direction = (endPos - startPos)
+    local distance = direction.Magnitude
+    local raycastResult = Workspace:Raycast(startPos, direction.Unit * distance, raycastParams)
+
+    if raycastResult then
+        local hitPart = raycastResult.Instance
+        if hitPart and hitPart.CanCollide then
+            local model = hitPart:FindFirstAncestorOfClass("Model")
+            if model then
+                local humanoid = model:FindFirstChild("Humanoid")
+                if not humanoid then
+                    return false
+                end
+            else
+                return false
+            end
+        end
+    end
+    return true
+end
+
+-- ==================== Ragebot 获取最近目标（考虑列表、可见性等） ====================
+local function getClosestTarget()
+    local currentTime = tick()
+
+    if currentTime - PerformanceCache.LastTargetUpdate < PerformanceCache.TargetUpdateInterval then
+        return PerformanceCache.TargetResults.lastTarget
+    end
+
+    local character = LocalPlayer.Character
+    local localHead = character and character:FindFirstChild("Head")
+    if not localHead then return nil end
+
+    local closest = nil
+    local shortestDistance = math.huge
+    local validTargets = {}
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+
+        local isWhitelisted = tableContains(RagebotWhitelist, player.Name)
+        if ConfigTable.Ragebot.FriendCheck and LocalPlayer:IsFriendsWith(player.UserId) then
+            isWhitelisted = true
+        end
+
+        if ConfigTable.Ragebot.UseWhitelist and isWhitelisted then continue end
+        if ConfigTable.Ragebot.UseTargetList and #RagebotTargetList > 0 and not tableContains(RagebotTargetList, player.Name) then continue end
+        if ConfigTable.Ragebot.TeamCheck and player.Team == LocalPlayer.Team then continue end
+
+        local char = player.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        local head = char and char:FindFirstChild("Head")
+
+        if hum and head and hum.Health > 0 then
+            if char:FindFirstChildOfClass("ForceField") then continue end
+            if ConfigTable.Ragebot.LowHealthCheck and hum.Health < 15 then continue end
+
+            local distance = (head.Position - localHead.Position).Magnitude
+            table.insert(validTargets, {
+                head = head,
+                distance = distance,
+                player = player
+            })
+        end
+    end
+
+    table.sort(validTargets, function(a, b)
+        return a.distance < b.distance
+    end)
+
+    local maxChecks = ConfigTable.Ragebot.MaxTarget > 0 and math.min(ConfigTable.Ragebot.MaxTarget, #validTargets) or #validTargets
+
+    for i = 1, maxChecks do
+        local targetData = validTargets[i]
+        if targetData then
+            if ConfigTable.Ragebot.VisibilityCheck then
+                if canSeeTarget(targetData.head) then
+                    closest = targetData.head
+                    break
+                end
+            else
+                closest = targetData.head
+                break
+            end
+        end
+    end
+
+    PerformanceCache.TargetResults.lastTarget = closest
+    PerformanceCache.LastTargetUpdate = currentTime
+
+    return closest
+end
+
+-- ==================== Ragebot 墙射算法 ====================
+local PersistentBest = {target = nil, score = math.huge, shootPos = nil, hitPos = nil}
+
+local function wallbang()
+    local localHead = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+    if not localHead then return nil, nil, false end
+
+    local target = getClosestTarget()
+    if not target then
+        PersistentBest = {target = nil, score = math.huge, shootPos = nil, hitPos = nil}
+        return nil, nil, false
+    end
+
+    local startPos = localHead.Position
+    local targetPos = target.Position
+
+    if PersistentBest.target == target and PersistentBest.shootPos then
+        local p1 = checkClearPath(startPos, PersistentBest.shootPos)
+        local p2 = checkClearPath(PersistentBest.shootPos, PersistentBest.hitPos)
+        if p1 and p2 then
+            return PersistentBest.shootPos, PersistentBest.hitPos, false
+        else
+            PersistentBest.score = math.huge
+        end
+    end
+
+    if PersistentBest.target ~= target then
+        PersistentBest = {target = target, score = math.huge, shootPos = nil, hitPos = nil}
+    end
+
+    local bestThisScan = nil
+    local minScoreThisScan = math.huge
+
+    for i = 1, 130 do
+        local sRange = ConfigTable.Ragebot.ShootRange
+        local hRange = ConfigTable.Ragebot.HitRange
+
+        local sPhi, sTheta = math.random() * math.pi * 2, math.random() * math.pi
+        local sTry = startPos + Vector3.new(sRange * math.sin(sTheta) * math.cos(sPhi), sRange * math.cos(sTheta), sRange * math.sin(sTheta) * math.sin(sPhi))
+
+        if checkClearPath(startPos, sTry) then
+            local hPhi, hTheta = math.random() * math.pi * 2, math.random() * math.pi
+            local hTry = targetPos + Vector3.new(hRange * math.sin(hTheta) * math.cos(hPhi), hRange * math.cos(hTheta), hRange * math.sin(hTheta) * math.sin(hPhi))
+
+            if checkClearPath(sTry, hTry) then
+                local dist = (sTry - startPos).Magnitude + (hTry - targetPos).Magnitude
+                if dist < minScoreThisScan then
+                    minScoreThisScan = dist
+                    bestThisScan = {s = sTry, h = hTry, ground = true}
+                end
+            end
+        end
+    end
+
+    if not bestThisScan then
+        local uY = -15
+        for i = 1, 100 do
+            local ang = math.random() * math.pi * 2
+            local rad = 3 + math.random() * 2
+            local sTry = Vector3.new(startPos.X + math.cos(ang) * rad, uY, startPos.Z + math.sin(ang) * rad)
+            local hTry = Vector3.new(targetPos.X + math.cos(ang) * rad, uY, targetPos.Z + math.sin(ang) * rad)
+
+            if checkClearPath(sTry, hTry) then
+                local dist = (sTry - startPos).Magnitude + (hTry - targetPos).Magnitude
+                if dist < minScoreThisScan then
+                    minScoreThisScan = dist
+                    bestThisScan = {s = sTry, h = hTry, ground = false}
+                end
+            end
+        end
+    end
+
+    if bestThisScan then
+        PersistentBest.shootPos = bestThisScan.s
+        PersistentBest.hitPos = bestThisScan.h
+        PersistentBest.score = minScoreThisScan
+        return PersistentBest.shootPos, PersistentBest.hitPos, false
+    end
+
+    return nil, nil, false
+end
+
+-- ==================== Ragebot 随机字符串（用于远程调用） ====================
+local function RandomString(length)
+    local charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    local result = ""
+    for i = 1, length do
+        result = result .. charset:sub(math.random(1, #charset), math.random(1, #charset))
+    end
+    return result
+end
+
+-- ==================== Ragebot 开火函数 ====================
+local function shootAtTarget(targetHead, optionalShootPos, optionalHitPos, fromCache, targetPlayerDistance)
+    if not targetHead then return false end
+
+    local localHead = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+    if not localHead then return false end
+
+    local tool = getCurrentTool()
+    if not tool then return false end
+
+    local values = tool:FindFirstChild("Values")
+    local hitMarker = tool:FindFirstChild("Hitmarker")
+    if not values or not hitMarker then return false end
+
+    local ammo = values:FindFirstChild("SERVER_Ammo")
+    local storedAmmo = values:FindFirstChild("SERVER_StoredAmmo")
+    if not ammo or not storedAmmo then return false end
+
+    if ammo.Value <= 0 then
+        autoReload()
+        return false
+    end
+
+    local bestShootPos, bestHitPos
+    if optionalShootPos and optionalHitPos then
+        bestShootPos = optionalShootPos
+        bestHitPos = optionalHitPos
+    else
+        bestShootPos, bestHitPos = wallbang()
+    end
+
+    if not bestShootPos or not bestHitPos then return false end
+
+    local hitPosition = bestHitPos
+    if ConfigTable.Ragebot.Prediction then
+        local velocity = targetHead.Velocity or Vector3.zero
+        hitPosition = hitPosition + velocity * ConfigTable.Ragebot.PredictionAmount
+    end
+
+    local hitDirection = (hitPosition - bestShootPos).Unit
+    local randomKey = RandomString(30) .. "0"
+
+    local events = ReplicatedStorage:FindFirstChild("Events")
+    if not events then return false end
+
+    local GNX_S = events:FindFirstChild("GNX_S")
+    local ZFKLF__H = events:FindFirstChild("ZFKLF__H")
+
+    if not GNX_S or not ZFKLF__H then
+        warn("Failed to find remote events")
+        return false
+    end
+
+    local args1 = {tick(), randomKey, tool, "FDS9I83", bestShootPos, {hitDirection}, false}
+    local args2 = {"🧈", tool, randomKey, 1, targetHead, hitPosition, hitDirection}
+
+    local targetPlayer = Players:GetPlayerFromCharacter(targetHead.Parent)
+    if targetPlayer then
+        local health = targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") and math.floor(targetPlayer.Character.Humanoid.Health) or 0
+
+        if not targetPlayerDistance then
+            targetPlayerDistance = (targetHead.Position - localHead.Position).Magnitude
+        end
+
+        createHitNotification(targetPlayer.Name, health, targetPlayerDistance, fromCache)
+        playHitSound()
+    end
+
+    GNX_S:FireServer(unpack(args1))
+    ZFKLF__H:FireServer(unpack(args2))
+    hitMarker:Fire(targetHead)
+
+    if storedAmmo then
+        storedAmmo.Value = storedAmmo.Value
+    end
+
+    createTracer(bestShootPos, hitPosition)
+    return true
+end
+
+-- ==================== Ragebot 武器射速缓存 ====================
+local toolRateCache = {}
+local function getWeaponFireRate(tool)
+    if toolRateCache[tool] then return toolRateCache[tool] end
+    for _, v in pairs(getgc(true)) do
+        if type(v) == "table" and rawget(v, "FireRate") and rawget(v, "Damage") and rawget(v, "MagSize") then
+            toolRateCache[tool] = v.FireRate
+            return v.FireRate
+        end
+    end
+    return 2.5
+end
+
+-- ==================== Ragebot 主循环（PostSimulation） ====================
+local lastShotTime = 0
+RunService.PostSimulation:Connect(function()
+    if not (ConfigTable.Ragebot.Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")) then return end
+
+    local target = getClosestTarget()
+    if not target then return end
+
+    local currentTool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    if not currentTool then return end
+
+    local currentTime = tick()
+    local isSpecial = (currentTool.Name == "TEC-9" or currentTool.Name == "Beretta")
+    local rapid = isSpecial and ConfigTable.Ragebot.RapidFire
+
+    local shootPos, hitPos = wallbang()
+    if not shootPos or not hitPos then return end
+
+    local dist = (target.Position - LocalPlayer.Character.Head.Position).Magnitude
+
+    if rapid then
+        shootAtTarget(target, shootPos, hitPos, false, dist)
+    else
+        local fireRate = getWeaponFireRate(currentTool)
+        if currentTime - lastShotTime >= (1 / fireRate) then
+            shootAtTarget(target, shootPos, hitPos, false, dist)
+            lastShotTime = currentTime
+        end
+    end
+end)
+
+-- ==================== Ragebot 快捷键切换（默认 E 键）====================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == ConfigTable.Ragebot.Keybind then
+        ConfigTable.Ragebot.Enabled = not ConfigTable.Ragebot.Enabled
+        print("[Ragebot] Enabled:", ConfigTable.Ragebot.Enabled)
+    end
+end)
+
+-- ==================== 初始化Ragebot自动装填 ====================
+autoReload()
+
+-- ==================== 原有自动拾取功能 ====================
+local functions = {
+    FastPickup = false,
+    AutoPickupScraps = false,
+    AutoPickupTools = false,
+    AutoPickupMoney = false,
+}
+local RUNS = {
+    AutopickupScraps = nil,
+    AutopickupTools = nil,
+    AutopickupMoney = nil,
+}
+
+-- 自动售货机变量
+local AutoVendingEnabled = false
+local SelectedVendingItem = "snack"
+local VendingLoop = nil
+
+-- 开锁功能变量
+local LockpickStretchEnabled = false
+local AutoUnlockSafeEnabled = false
+local AutoUnlockSafeConnection = nil
+local SafeUnlocked = false
+
+-- 无限耐力变量
+local staminaLoop = nil
+local StaminaTbl = {}
+local InfiniteStaminaEnabled = false
+
+-- 自动开门变量
+getgenv().AutoOpenDoorsEnabled = false
+local autoOpenDoorsTask = nil
+
+-- 近战光环变量
+local remote1 = ReplicatedStorage.Events["XMHH.2"]
+local remote2 = ReplicatedStorage.Events["XMHH2.2"]
+local MeleeAuraSettings = {
+    Enabled = false,
+    Distance = 20,
+    CheckWhitelist = false,
+    CheckTeam = false,
+    TargetPart = "Random",
+    ShowAnim = true
+}
+local ValidTargetParts = {"Head", "Torso", "Right Arm", "Left Arm", "Right Leg", "Left Leg"}
+local meleeAuraTask = nil
+local lastAttackTime = 0
+local AttackCD = {
+    ["Fists"] = 0.2,
+    ["Knuckledusters"] = 0.05,
+    ["Nunchucks"] = 0.05,
+    ["Shiv"] = 0.05,
+    ["Bat"] = 1.5,
+    ["Metal-Bat"] = 1.3,
+    ["Chainsaw"] = 4,
+    ["Balisong"] = 0.05,
+    ["Rambo"] = 0.3,
+    ["Shovel"] = 3.4,
+    ["Sledgehammer"] = 2,
+    ["Katana"] = 0.1,
+    ["Wrench"] = 0.1
+}
+
+-- 动作功能变量（包含十个新R6姿势）
+local HeadLookUpEnabled = false
+local NeckOriginalC0 = nil
+local NeckJoint = nil
+local headLookUpConnection = nil
+
+local ProneEnabled = false
+local JointOriginalAngles = {}
+local proneConnection = nil
+
+local CcbEnabled = false
+local CcbOriginalAngles = {}
+local ccbConnection = nil
+
+-- 新姿势变量
+local currentPoseIndex = 0
+local poseConnections = {}
+local poseOriginalAngles = {}
+local poseJoints = {}
+
+-- 定义十个R6姿势的角度（每个姿势是一个表，包含关节的CFrame旋转）
+local Poses = {
+    { -- 姿势1: 双手举高
+        LeftShoulder = CFrame.Angles(math.rad(-90), 0, 0),
+        RightShoulder = CFrame.Angles(math.rad(-90), 0, 0),
+        LeftHip = CFrame.Angles(0, 0, 0),
+        RightHip = CFrame.Angles(0, 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(0, 0, 0),
+    },
+    { -- 姿势2: 向前弯腰
+        LeftShoulder = CFrame.Angles(0, 0, 0),
+        RightShoulder = CFrame.Angles(0, 0, 0),
+        LeftHip = CFrame.Angles(0, 0, 0),
+        RightHip = CFrame.Angles(0, 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(math.rad(45), 0, 0),
+    },
+    { -- 姿势3: 踢右腿
+        LeftShoulder = CFrame.Angles(0, 0, 0),
+        RightShoulder = CFrame.Angles(0, 0, 0),
+        LeftHip = CFrame.Angles(0, 0, 0),
+        RightHip = CFrame.Angles(math.rad(-90), 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(0, 0, 0),
+    },
+    { -- 姿势4: 踢左腿
+        LeftShoulder = CFrame.Angles(0, 0, 0),
+        RightShoulder = CFrame.Angles(0, 0, 0),
+        LeftHip = CFrame.Angles(math.rad(-90), 0, 0),
+        RightHip = CFrame.Angles(0, 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(0, 0, 0),
+    },
+    { -- 姿势5: 敬礼（右手碰头）
+        LeftShoulder = CFrame.Angles(0, 0, 0),
+        RightShoulder = CFrame.Angles(math.rad(90), math.rad(90), 0),
+        LeftHip = CFrame.Angles(0, 0, 0),
+        RightHip = CFrame.Angles(0, 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(0, 0, 0),
+    },
+    { -- 姿势6: 投降姿势
+        LeftShoulder = CFrame.Angles(math.rad(90), 0, 0),
+        RightShoulder = CFrame.Angles(math.rad(90), 0, 0),
+        LeftHip = CFrame.Angles(0, 0, 0),
+        RightHip = CFrame.Angles(0, 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(0, 0, 0),
+    },
+    { -- 姿势7: 扎马步
+        LeftShoulder = CFrame.Angles(0, 0, 0),
+        RightShoulder = CFrame.Angles(0, 0, 0),
+        LeftHip = CFrame.Angles(math.rad(30), 0, 0),
+        RightHip = CFrame.Angles(math.rad(30), 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(math.rad(20), 0, 0),
+    },
+    { -- 姿势8: 向后弯腰
+        LeftShoulder = CFrame.Angles(0, 0, 0),
+        RightShoulder = CFrame.Angles(0, 0, 0),
+        LeftHip = CFrame.Angles(0, 0, 0),
+        RightHip = CFrame.Angles(0, 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(math.rad(-45), 0, 0),
+    },
+    { -- 姿势9: 伸懒腰（右臂上举，左臂下垂）
+        LeftShoulder = CFrame.Angles(0, 0, 0),
+        RightShoulder = CFrame.Angles(math.rad(-90), 0, 0),
+        LeftHip = CFrame.Angles(0, 0, 0),
+        RightHip = CFrame.Angles(0, 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(0, 0, 0),
+    },
+    { -- 姿势10: 站立（恢复）
+        LeftShoulder = CFrame.Angles(0, 0, 0),
+        RightShoulder = CFrame.Angles(0, 0, 0),
+        LeftHip = CFrame.Angles(0, 0, 0),
+        RightHip = CFrame.Angles(0, 0, 0),
+        Neck = CFrame.Angles(0, 0, 0),
+        Waist = CFrame.Angles(0, 0, 0),
+    },
+}
+
+-- 应用姿势的函数
+local function applyPose(index)
+    if currentPoseIndex == index then return end -- 相同姿势不重复应用
+    
+    -- 停止之前的姿势连接
+    for _, conn in ipairs(poseConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    poseConnections = {}
+    
+    -- 恢复原始角度（如果存在）
+    local char = LocalPlayer.Character
+    if char then
+        local torso = char:FindFirstChild("Torso")
+        if torso then
+            for name, joint in pairs(poseJoints) do
+                if joint and joint:IsA("Motor6D") and poseOriginalAngles[name] then
+                    joint.C0 = poseOriginalAngles[name]
+                end
+            end
+        end
+    end
+    
+    poseJoints = {}
+    poseOriginalAngles = {}
+    
+    if index == 0 then
+        currentPoseIndex = 0
+        return
+    end
+    
+    -- 获取当前角色的关节
+    char = LocalPlayer.Character
+    if not char then return end
+    local torso = char:FindFirstChild("Torso")
+    if not torso then return end
+    
+    local joints = {
+        LeftShoulder = torso:FindFirstChild("Left Shoulder"),
+        RightShoulder = torso:FindFirstChild("Right Shoulder"),
+        LeftHip = torso:FindFirstChild("Left Hip"),
+        RightHip = torso:FindFirstChild("Right Hip"),
+        Neck = char:FindFirstChild("Head") and char.Head:FindFirstChild("Neck") or torso:FindFirstChild("Neck"),
+        Waist = torso:FindFirstChild("Waist")
+    }
+    
+    for name, joint in pairs(joints) do
+        if joint and joint:IsA("Motor6D") then
+            poseJoints[name] = joint
+            poseOriginalAngles[name] = joint.C0
+        end
+    end
+    
+    -- 创建新的连接
+    local conn = RunService.RenderStepped:Connect(function()
+        if not LocalPlayer.Character then return end
+        local char = LocalPlayer.Character
+        local torso = char:FindFirstChild("Torso")
+        if not torso then return end
+        
+        for name, joint in pairs(poseJoints) do
+            if joint and joint.Parent then
+                local angle = Poses[index][name]
+                if angle then
+                    joint.C0 = angle
+                end
+            end
+        end
+    end)
+    
+    table.insert(poseConnections, conn)
+    currentPoseIndex = index
+end
+
+-- 沉默自瞄设置
+local SilentAimSettings = {
+    Enabled = false,
+    DrawSize = 150,
+    TargetPart = "Head",
+    CheckWhitelist = false,
+    CheckWall = false,
+    UseHitChance = false,
+    HitChance = 100,
+    CheckTeam = false,
+    DrawCircle = true,
+    DrawColor = Color3.fromRGB(255, 255, 255)
+}
+local Whitelist = {}
+local currentTarget = nil
+local BodyParts = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}
+
+-- 击打音效变量
+local HitSoundEnabled = false
+local HitSoundId = "rbxassetid://9120387431"
+
+-- ==================== 无坠落伤害模块 ====================
+getgenv().NoFallDamage = false
+local noFallDamageHooked = false
+local function setupNoFallDamage()
+    if noFallDamageHooked then return end
+    noFallDamageHooked = true
+    local old = hookmetamethod(game, "__namecall", function(self, ...)
+        local args = { ... }
+        local method = getnamecallmethod()
+        if method == "FireServer" and not checkcaller() and args[1] == "FlllD" and args[4] == false and getgenv().NoFallDamage then
+            args[2] = 0
+            args[3] = 0
+        end
+        return old(self, unpack(args))
+    end)
+end
+
+-- FOV圆绘制
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Radius = SilentAimSettings.DrawSize
+FOVCircle.Color = SilentAimSettings.DrawColor
+FOVCircle.Thickness = 2
+FOVCircle.Filled = false
+FOVCircle.Transparency = 1
+FOVCircle.Visible = SilentAimSettings.Enabled and SilentAimSettings.DrawCircle
+
+local function getScreenCenter()
+    local viewportSize = Camera.ViewportSize
+    return Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+end
+
+RunService.RenderStepped:Connect(function()
+    FOVCircle.Position = getScreenCenter()
+    FOVCircle.Radius = SilentAimSettings.DrawSize
+    FOVCircle.Color = SilentAimSettings.DrawColor
+    FOVCircle.Visible = SilentAimSettings.Enabled and SilentAimSettings.DrawCircle
+end)
+
+-- 无限耐力函数
+local function UpdateStaminaTables()
+    table.clear(StaminaTbl)
+    for _, v in pairs(getgc(true)) do
+        if type(v) == "table" and rawget(v, "S") then
+            table.insert(StaminaTbl, v)
+        end
+    end
+end
+
+local function SetupInfiniteStamina()
+    UpdateStaminaTables()
+    if staminaLoop then staminaLoop:Disconnect() end
+    staminaLoop = RunService.RenderStepped:Connect(function()
+        if InfiniteStaminaEnabled then
+            for _, tbl in pairs(StaminaTbl) do
+                tbl.S = 100
+            end
+        end
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if InfiniteStaminaEnabled then
+        SetupInfiniteStamina()
+    end
+end)
+
+-- 自动开门函数
+local function AutoOpenDoorsLoop()
+    while getgenv().AutoOpenDoorsEnabled do
+        local myChar = LocalPlayer.Character
+        local hrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            RunService.RenderStepped:Wait()
+            continue
+        end
+
+        local map = Workspace:FindFirstChild("Map")
+        local folder = map and map:FindFirstChild("Doors")
+        if not folder then
+            RunService.RenderStepped:Wait()
+            continue
+        end
+
+        local closestDoor, minDist = nil, 15
+        for _, door in ipairs(folder:GetChildren()) do
+            local db = door:FindFirstChild("DoorBase")
+            if db then
+                local d = (hrp.Position - db.Position).Magnitude
+                if d < minDist then
+                    closestDoor = door
+                    minDist = d
+                end
+            end
+        end
+
+        if closestDoor then
+            local values = closestDoor:FindFirstChild("Values")
+            local events = closestDoor:FindFirstChild("Events")
+            if values and events then
+                local locked = values:FindFirstChild("Locked")
+                local open = values:FindFirstChild("Open")
+                local toggle = events:FindFirstChild("Toggle")
+                if locked and open and toggle then
+                    if locked.Value then
+                        toggle:FireServer("Unlock", closestDoor.Lock)
+                    elseif not open.Value then
+                        local knob1 = closestDoor:FindFirstChild("Knob1")
+                        local knob2 = closestDoor:FindFirstChild("Knob2")
+                        if knob1 and knob2 then
+                            local d1 = (hrp.Position - knob1.Position).Magnitude
+                            local d2 = (hrp.Position - knob2.Position).Magnitude
+                            local knob = d1 < d2 and knob1 or knob2
+                            toggle:FireServer("Open", knob)
+                        end
+                    end
+                end
+            end
+        end
+
+        RunService.RenderStepped:Wait()
+    end
+end
+
+local function ToggleAutoOpenDoors(state)
+    getgenv().AutoOpenDoorsEnabled = state
+    if state then
+        if autoOpenDoorsTask then task.cancel(autoOpenDoorsTask) end
+        autoOpenDoorsTask = task.spawn(AutoOpenDoorsLoop)
+    elseif autoOpenDoorsTask then
+        task.cancel(autoOpenDoorsTask)
+        autoOpenDoorsTask = nil
+    end
+end
+
+-- 近战光环函数
+local function AttackTarget(targetChar)
+    if not targetChar or not targetChar:FindFirstChild("Head") then return end
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    local tool = myChar:FindFirstChildOfClass("Tool")
+    if not tool then return end
+
+    local cd = AttackCD[tool.Name] or 0.5
+    if tick() - lastAttackTime < cd then return end
+
+    local result = remote1:InvokeServer("🍞", tick(), tool, "43TRFWX", "Normal", tick(), true)
+
+    if MeleeAuraSettings.ShowAnim then
+        local anim = tool:FindFirstChild("AnimsFolder") and tool.AnimsFolder:FindFirstChild("Slash1")
+        if anim then
+            local humanoid = myChar:FindFirstChildOfClass("Humanoid")
+            local animator = humanoid and humanoid:FindFirstChild("Animator")
+            if animator then
+                animator:LoadAnimation(anim):Play(0.1, 1, 1.3)
+            end
+        end
+    end
+
+    task.wait(0.3 + math.random() * 0.2)
+
+    local Handle = tool:FindFirstChild("WeaponHandle") or tool:FindFirstChild("Handle") or myChar:FindFirstChild("Left Arm")
+    if not Handle then return end
+
+    local targetPart
+    if MeleeAuraSettings.TargetPart == "Random" then
+        local partName = ValidTargetParts[math.random(1, #ValidTargetParts)]
+        targetPart = targetChar:FindFirstChild(partName)
+    else
+        targetPart = targetChar:FindFirstChild(MeleeAuraSettings.TargetPart) or targetChar:FindFirstChild("Right Arm")
+    end
+    if not targetPart then return end
+
+    local args = {
+        "🍞",
+        tick(),
+        tool,
+        "2389ZFX34",
+        result,
+        true,
+        Handle,
+        targetPart,
+        targetChar,
+        myChar.HumanoidRootPart.Position,
+        targetPart.Position
+    }
+
+    if tool.Name == "Chainsaw" then
+        for _ = 1, 15 do
+            remote2:FireServer(unpack(args))
+        end
+    else
+        remote2:FireServer(unpack(args))
+    end
+
+    lastAttackTime = tick()
+end
+
+local function MeleeAuraLoop()
+    while MeleeAuraSettings.Enabled do
+        local myChar = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+            local myHRP = myChar.HumanoidRootPart
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    local targetHRP = player.Character.HumanoidRootPart
+                    local dist = (myHRP.Position - targetHRP.Position).Magnitude
+                    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                    local forceField = player.Character:FindFirstChildOfClass("ForceField")
+
+                    if dist < MeleeAuraSettings.Distance
+                        and humanoid and humanoid.Health > 15
+                        and not forceField
+                        and (not MeleeAuraSettings.CheckWhitelist or not tableContains(Whitelist, player.Name))
+                        and (not MeleeAuraSettings.CheckTeam or player.Team ~= LocalPlayer.Team) then
+                        AttackTarget(player.Character)
+                    end
+                end
+            end
+        end
+        RunService.Heartbeat:Wait()
+    end
+end
+
+local function ToggleMeleeAura(state)
+    MeleeAuraSettings.Enabled = state
+    if state then
+        if meleeAuraTask then task.cancel(meleeAuraTask) end
+        meleeAuraTask = task.spawn(MeleeAuraLoop)
+    elseif meleeAuraTask then
+        task.cancel(meleeAuraTask)
+        meleeAuraTask = nil
+    end
+end
+
+-- 沉默自瞄相关函数
+local function GetClosestTarget()
+    if not SilentAimSettings.Enabled then return nil end
+    local closest, minDistance = nil, SilentAimSettings.DrawSize
+    local screenCenter = getScreenCenter()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            if SilentAimSettings.CheckTeam and player.Team == LocalPlayer.Team then continue end
+            if SilentAimSettings.CheckWhitelist and tableContains(Whitelist, player.Name) then continue end
+            local part = player.Character:FindFirstChild("HumanoidRootPart")
+            if not part then continue end
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if not onScreen then continue end
+            if SilentAimSettings.CheckWall then
+                local ignore = {Camera, LocalPlayer.Character, player.Character}
+                if #Camera:GetPartsObscuringTarget({part.Position}, ignore) > 0 then continue end
+            end
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+            if dist < minDistance then
+                minDistance = dist
+                closest = player
+            end
+        end
+    end
+    if closest and SilentAimSettings.UseHitChance and math.random(1, 100) > SilentAimSettings.HitChance then
+        return nil
+    end
+    return closest
+end
+
+local function GetTargetPart(char)
+    if SilentAimSettings.TargetPart == "Random" then
+        for _ = 1, 5 do
+            local partName = BodyParts[math.random(1, #BodyParts)]
+            local part = char:FindFirstChild(partName)
+            if part then return part end
+        end
+        return char:FindFirstChild("Head")
+    else
+        return char:FindFirstChild(SilentAimSettings.TargetPart)
+    end
+end
+
+task.spawn(function()
+    while true do
+        currentTarget = SilentAimSettings.Enabled and GetClosestTarget() or nil
+        task.wait()
+    end
+end)
+
+local VisualizeEvent = ReplicatedStorage:WaitForChild("Events2"):WaitForChild("Visualize")
+local DamageEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("ZFKLF__H")
+
+VisualizeEvent.Event:Connect(function(_, ShotCode, _, Gun, _, StartPos, BulletsPerShot)
+    if not SilentAimSettings.Enabled then return end
+    if not currentTarget or not currentTarget.Character or currentTarget.Character:FindFirstChildOfClass("ForceField") then return end
+    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    if not tool or Gun ~= tool then return end
+    local part = GetTargetPart(currentTarget.Character)
+    if not part then return end
+    local hitPos = part.Position
+    local bullets = {}
+    for i = 1, math.clamp(#BulletsPerShot, 1, 100) do
+        bullets[i] = CFrame.new(StartPos, hitPos).LookVector
+    end
+    task.wait(0.005)
+    for i, dir in ipairs(bullets) do
+        DamageEvent:FireServer("🧈", Gun, ShotCode, i, part, hitPos, dir)
+    end
+    if Gun:FindFirstChild("Hitmarker") then
+        Gun.Hitmarker:Fire(part)
+    end
+    if HitSoundEnabled then
+        local sound = Instance.new("Sound")
+        sound.SoundId = HitSoundId
+        sound.Volume = 0.5
+        sound.Parent = soundService
+        sound:Play()
+        debris:AddItem(sound, 2)
+    end
+end)
+
+-- ==================== 自动拾取功能实现 ====================
+-- 快速拾取
+game.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ProximityPrompt") and functions.FastPickup then
+        obj.HoldDuration = 0
+        obj:GetPropertyChangedSignal("HoldDuration"):Connect(function()
+            if functions.FastPickup then obj.HoldDuration = 0 end
+        end)
+    end
+end)
+
+-- 自动拾取废料
+local function autoPickupScraps(value)
+    functions.AutoPickupScraps = value
+    local remote = ReplicatedStorage.Events.PIC_PU
+    local scrapsfolder = Workspace:FindFirstChild("Filter") and Workspace.Filter:FindFirstChild("SpawnedPiles")
+    if not scrapsfolder then return end
+    local canPickup = true; local startTick = tick()
+    if value then
+        RUNS.AutopickupScraps = RunService.RenderStepped:Connect(function()
+            local function GetClosestScrap()
+                local maxdist = 15; local closest = nil
+                for _, a in pairs(scrapsfolder:GetChildren()) do
+                    if a and (a.Name=="S1" or a.Name=="S2") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        local mesh = a:FindFirstChild("MeshPart")
+                        if mesh then
+                            local d = (LocalPlayer.Character.HumanoidRootPart.Position - mesh.Position).Magnitude
+                            if d < maxdist then maxdist = d; closest = a end
+                        end
+                    end
+                end
+                return closest
+            end
+            local scrap = GetClosestScrap()
+            if scrap and canPickup then
+                local attr = scrap:GetAttribute("jzu")
+                if attr then remote:FireServer(string.reverse(attr)); canPickup = false end
+            end
+            if not canPickup and tick()-startTick >= 4.5 then canPickup = true; startTick = tick() end
+        end)
+    elseif RUNS.AutopickupScraps then RUNS.AutopickupScraps:Disconnect(); RUNS.AutopickupScraps = nil end
+end
+
+-- 自动拾取工具
+local function autoPickupTools(value)
+    functions.AutoPickupTools = value
+    local remote = ReplicatedStorage.Events.PIC_TLO
+    local toolsfolder = Workspace:FindFirstChild("Filter") and Workspace.Filter:FindFirstChild("SpawnedTools")
+    if not toolsfolder then return end
+    local canPickup = true; local startTick = tick()
+    if value then
+        RUNS.AutopickupTools = RunService.RenderStepped:Connect(function()
+            local function GetClosestTool()
+                local maxdist = 15; local closest = nil
+                for _, a in pairs(toolsfolder:GetChildren()) do
+                    if a and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        local handle = a:FindFirstChild("Handle") or a:FindFirstChild("WeaponHandle")
+                        if handle and (handle:IsA("Part") or handle:IsA("MeshPart")) then
+                            local d = (LocalPlayer.Character.HumanoidRootPart.Position - handle.Position).Magnitude
+                            if d < maxdist then maxdist = d; closest = a end
+                        end
+                    end
+                end
+                return closest
+            end
+            local tool = GetClosestTool()
+            if tool and canPickup then
+                local Handle = tool:FindFirstChild("Handle") or tool:FindFirstChild("WeaponHandle")
+                if Handle then remote:FireServer(Handle); canPickup = false end
+            end
+            if not canPickup and tick()-startTick >= 1.5 then canPickup = true; startTick = tick() end
+        end)
+    elseif RUNS.AutopickupTools then RUNS.AutopickupTools:Disconnect(); RUNS.AutopickupTools = nil end
+end
+
+-- 自动拾取金钱
+local function autoPickupMoney(value)
+    functions.AutoPickupMoney = value
+    local remote = ReplicatedStorage.Events:FindFirstChild("CZDPZUS")
+    if not remote then return end
+    local moneyfolder = Workspace:FindFirstChild("Filter") and Workspace.Filter:FindFirstChild("SpawnedBread")
+    if not moneyfolder then return end
+    local canPickup = true; local startTick = tick()
+    if value then
+        RUNS.AutopickupMoney = RunService.RenderStepped:Connect(function()
+            local function GetMoney()
+                local maxdist = 15; local closest = nil
+                for _, a in pairs(moneyfolder:GetChildren()) do
+                    if a and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        local d = (LocalPlayer.Character.HumanoidRootPart.Position - a.Position).Magnitude
+                        if d < maxdist then maxdist = d; closest = a end
+                    end
+                end
+                return closest
+            end
+            local money = GetMoney()
+            if money and canPickup then remote:FireServer(money); canPickup = false end
+            if not canPickup and tick()-startTick >= 1 then canPickup = true; startTick = tick() end
+        end)
+    elseif RUNS.AutopickupMoney then RUNS.AutopickupMoney:Disconnect(); RUNS.AutopickupMoney = nil end
+end
+
+-- 自动售货机
+local function toggleAutoVending(value)
+    AutoVendingEnabled = value
+    if value then
+        VendingLoop = RunService.Heartbeat:Connect(function()
+            if not AutoVendingEnabled then return end
+            local char = LocalPlayer.Character
+            if not char or char:FindFirstChild("UsingVending") then return end
+            local vendingFolder = Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("VendingMachines")
+            if vendingFolder then
+                for _, vend in ipairs(vendingFolder:GetChildren()) do
+                    local mainPart = vend:FindFirstChild("MainPart")
+                    if mainPart then
+                        pcall(function() ReplicatedStorage.Events.VendinMachine:InvokeServer(mainPart, SelectedVendingItem) end)
+                    end
+                end
+            end
+        end)
+    elseif VendingLoop then VendingLoop:Disconnect(); VendingLoop = nil end
+end
+
+-- 自动解锁保险箱
+local function startAutoUnlockSafe()
+    if AutoUnlockSafeConnection then return end
+    SafeUnlocked = false
+    AutoUnlockSafeConnection = task.spawn(function()
+        while AutoUnlockSafeEnabled do
+            local char = LocalPlayer.Character
+            if not char then char = LocalPlayer.CharacterAdded:Wait() end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local lockpick = char:FindFirstChild("Lockpick")
+            if not lockpick then task.wait(1); continue end
+            local remote = lockpick:FindFirstChild("Remote")
+            if not remote then task.wait(1); continue end
+            local safe = Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("BredMakurz") and Workspace.Map.BredMakurz:FindFirstChild("SmallSafe_C_3")
+            if not safe then task.wait(5); continue end
+            local dist = (hrp.Position - safe.Position).Magnitude
+            if dist <= 5 and not SafeUnlocked then
+                local s1, r1 = pcall(function() return remote:InvokeServer("D", safe, "s", 0.34505767977439417) end)
+                local s2, r2 = pcall(function() return remote:InvokeServer("C") end)
+                if s1 and s2 then SafeUnlocked = true; Windows:Notification("保险箱已自动解锁") end
+            end
+            task.wait(0.5)
+        end
+    end)
+end
+local function stopAutoUnlockSafe() if AutoUnlockSafeConnection then task.cancel(AutoUnlockSafeConnection); AutoUnlockSafeConnection = nil end end
+
+-- 拉伸开锁条
+local function updateLockpickBars()
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if playerGui and playerGui:FindFirstChild("LockpickGUI") then
+        local frames = playerGui.LockpickGUI.MF.LP_Frame.Frames
+        for i=1,3 do
+            local bar = frames["B"..i].Bar
+            bar.Size = LockpickStretchEnabled and UDim2.new(0,35,0,500) or UDim2.new(0,35,0,30)
+        end
+    end
+end
+LocalPlayer:FindFirstChildOfClass("PlayerGui").ChildAdded:Connect(function(c)
+    if c.Name=="LockpickGUI" then task.wait(0.1); updateLockpickBars() end
+end)
+
+-- 普京比例
+local function applyPutinRatio()
+    getgenv().Resolution = {
+        [".gg/scripters"] = 0.65
+    }
+    local Camera = Workspace.CurrentCamera
+    if getgenv().gg_scripters == nil then
+        RunService.RenderStepped:Connect(
+            function()
+                Camera.CFrame = Camera.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, getgenv().Resolution[".gg/scripters"], 0, 0, 0, 1)
+            end
+        )
+    end
+    getgenv().gg_scripters = "g5s"
+end
+
+local function resetRatio()
+    getgenv().Resolution = {
+        [".gg/scripters"] = 1
+    }
+end
+
+-- 头部朝天锁定（原有）
+local function updateHeadLookUp()
+    if HeadLookUpEnabled then
+        local char = LocalPlayer.Character
+        if not char then return end
+        local head = char:FindFirstChild("Head")
+        local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+        if head and torso then
+            local neck = head:FindFirstChild("Neck") or torso:FindFirstChild("Neck")
+            if neck and neck:IsA("Motor6D") then
+                NeckJoint = neck; NeckOriginalC0 = neck.C0
+                if headLookUpConnection then headLookUpConnection:Disconnect() end
+                headLookUpConnection = RunService.RenderStepped:Connect(function()
+                    if HeadLookUpEnabled and NeckJoint and NeckJoint.Parent then
+                        NeckJoint.C0 = CFrame.Angles(math.rad(-90), 0, 0)
+                    end
+                end)
+            end
+        end
+    else
+        if headLookUpConnection then headLookUpConnection:Disconnect(); headLookUpConnection = nil end
+        if NeckJoint and NeckOriginalC0 then NeckJoint.C0 = NeckOriginalC0 end
+        NeckJoint = nil; NeckOriginalC0 = nil
+    end
+end
+LocalPlayer.CharacterAdded:Connect(function() if HeadLookUpEnabled then task.wait(0.5); updateHeadLookUp() end end)
+
+-- 趴下姿势（原有）
+local function applyProne(enable)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local torso = char:FindFirstChild("Torso")
+    if not torso then return end
+    local joints = {
+        LeftShoulder = torso:FindFirstChild("Left Shoulder"),
+        RightShoulder = torso:FindFirstChild("Right Shoulder"),
+        LeftHip = torso:FindFirstChild("Left Hip"),
+        RightHip = torso:FindFirstChild("Right Hip")
+    }
+    if enable then
+        for n,j in pairs(joints) do if j and j:IsA("Motor6D") and not JointOriginalAngles[n] then JointOriginalAngles[n] = j.C0 end end
+        if proneConnection then proneConnection:Disconnect() end
+        proneConnection = RunService.RenderStepped:Connect(function()
+            if not ProneEnabled then return end
+            for n,j in pairs(joints) do
+                if j and j:IsA("Motor6D") then
+                    if n=="LeftShoulder" or n=="RightShoulder" then j.C0 = CFrame.Angles(math.rad(90),0,0)
+                    elseif n=="LeftHip" or n=="RightHip" then j.C0 = CFrame.Angles(math.rad(-90),0,0) end
+                end
+            end
+        end)
+    else
+        if proneConnection then proneConnection:Disconnect(); proneConnection = nil end
+        for n,j in pairs(joints) do if j and j:IsA("Motor6D") and JointOriginalAngles[n] then j.C0 = JointOriginalAngles[n] end end
+        JointOriginalAngles = {}
+    end
+end
+LocalPlayer.CharacterAdded:Connect(function() if ProneEnabled then task.wait(0.5); applyProne(true) end end)
+
+-- ccb动作（原有）
+local function applyCcb(enable)
+    if enable then
+        local char = LocalPlayer.Character
+        if not char then return end
+        local torso = char:FindFirstChild("Torso")
+        if not torso then return end
+        local waist = torso:FindFirstChild("Waist")
+        local rightShoulder = torso:FindFirstChild("Right Shoulder")
+        if waist and waist:IsA("Motor6D") then CcbOriginalAngles["Waist"] = waist.C0 end
+        if rightShoulder and rightShoulder:IsA("Motor6D") then CcbOriginalAngles["RightShoulder"] = rightShoulder.C0 end
+        if ccbConnection then ccbConnection:Disconnect() end
+        ccbConnection = RunService.RenderStepped:Connect(function()
+            if not CcbEnabled then return end
+            if waist and waist:IsA("Motor6D") and waist.Parent then waist.C0 = CFrame.Angles(math.rad(-45),0,0) end
+            if rightShoulder and rightShoulder:IsA("Motor6D") and rightShoulder.Parent then rightShoulder.C0 = CFrame.Angles(math.rad(170),math.rad(10),0) end
+        end)
+    else
+        if ccbConnection then ccbConnection:Disconnect(); ccbConnection = nil end
+        local char = LocalPlayer.Character
+        if char then
+            local torso = char:FindFirstChild("Torso")
+            if torso then
+                local waist = torso:FindFirstChild("Waist")
+                if waist and waist:IsA("Motor6D") and CcbOriginalAngles["Waist"] then waist.C0 = CcbOriginalAngles["Waist"] end
+                local rightShoulder = torso:FindFirstChild("Right Shoulder")
+                if rightShoulder and rightShoulder:IsA("Motor6D") and CcbOriginalAngles["RightShoulder"] then rightShoulder.C0 = CcbOriginalAngles["RightShoulder"] end
+            end
+        end
+        CcbOriginalAngles = {}
+    end
+end
+LocalPlayer.CharacterAdded:Connect(function() if CcbEnabled then task.wait(0.5); applyCcb(true) end end)
+
+-- ==================== 水印库（三角符文风格） ====================
+local WatermarkLib = {}
+WatermarkLib.Accent = Color3.fromRGB(0, 255, 0) -- 改为绿色
+WatermarkLib.ScreenGUI = Instance.new("ScreenGui", CoreGui)
+WatermarkLib.UIFont = Font.fromEnum(Enum.Font.Pixel)
+
+function WatermarkLib:Watermark(Properties)
+    local Watermark = { Name = Properties.Name or "ske.gg" }
+
+    local Outline = Instance.new("Frame", WatermarkLib.ScreenGUI)
+    Outline.Name = "Outline"
+    Outline.AutomaticSize = Enum.AutomaticSize.X
+    Outline.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    Outline.Position = UDim2.new(0.01, 0, 0.02, 0)
+    Outline.Size = UDim2.new(0, 0, 0, 18)
+    Outline.Visible = true
+
+    local Inline = Instance.new("Frame", Outline)
+    Inline.Name = "Inline"
+    Inline.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    Inline.Position = UDim2.new(0, 1, 0, 1)
+    Inline.Size = UDim2.new(1, -2, 1, -2)
+
+    local Value = Instance.new("TextLabel", Inline)
+    Value.Name = "Value"
+    Value.FontFace = WatermarkLib.UIFont
+    Value.Text = Watermark.Name
+    Value.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Value.TextSize = 14
+    Value.TextXAlignment = Enum.TextXAlignment.Left
+    Value.AutomaticSize = Enum.AutomaticSize.X
+    Value.BackgroundTransparency = 1
+    Value.Size = UDim2.new(0, 0, 1, 0)
+
+    local UIPadding = Instance.new("UIPadding", Value)
+    UIPadding.PaddingLeft = UDim.new(0, 5)
+    UIPadding.PaddingRight = UDim.new(0, 5)
+    UIPadding.PaddingTop = UDim.new(0, 1)
+
+    local Accent = Instance.new("Frame", Outline)
+    Accent.Name = "Accent"
+    Accent.BackgroundColor3 = WatermarkLib.Accent
+    Accent.Size = UDim2.new(1, 0, 0, 1)
+
+    function Watermark:SetVisible(State)
+        Outline.Visible = State
+    end
+
+    return Watermark
+end
+
+local MyWatermark = WatermarkLib:Watermark({ Name = "农民.gg" })
+MyWatermark:SetVisible(true)
+
+-- ==================== 绿色主题修改函数 ====================
+local function applyGreenTheme()
+    task.wait(1) -- 等待UI加载
+    local accentColor = Color3.fromRGB(85, 170, 255) -- 原主题蓝
+    local greenColor = Color3.fromRGB(0, 255, 0)
+    
+    local function recolor(obj)
+        if obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("ScrollingFrame") then
+            if obj.BackgroundColor3 == accentColor then
+                obj.BackgroundColor3 = greenColor
+            end
+        end
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+            if obj.TextColor3 == accentColor then
+                obj.TextColor3 = greenColor
+            end
+        end
+        for _, child in ipairs(obj:GetChildren()) do
+            recolor(child)
+        end
+    end
+    
+    for _, gui in ipairs(CoreGui:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            recolor(gui)
+        end
+    end
+    
+    -- 水印Accent已改为绿色，无需再改
+end
+task.spawn(applyGreenTheme)
+
+-- ==================== 创建标签页 ====================
+
+-- 拾取功能标签页
+local TabPickup = Windows:NewTab({
+    Title = "拾取功能",
+    Description = "自动拾取物品",
+    Icon = "rbxassetid://7733960981"
+})
+local PickupLeft = TabPickup:NewSection({ Title = "自动拾取", Icon = "rbxassetid://7743869054", Position = "Left" })
+PickupLeft:NewToggle({
+    Title = "快速拾取",
+    Default = functions.FastPickup,
+    Callback = function(v)
+        functions.FastPickup = v
+    end
+})
+PickupLeft:NewToggle({
+    Title = "自动拾取废料",
+    Default = functions.AutoPickupScraps,
+    Callback = function(v) autoPickupScraps(v) end
+})
+PickupLeft:NewToggle({
+    Title = "自动拾取工具",
+    Default = functions.AutoPickupTools,
+    Callback = function(v) autoPickupTools(v) end
+})
+PickupLeft:NewToggle({
+    Title = "自动拾取金钱",
+    Default = functions.AutoPickupMoney,
+    Callback = function(v) autoPickupMoney(v) end
+})
+
+-- 其他功能标签页（左侧：杂项，右侧：近战光环）
+local TabOther = Windows:NewTab({
+    Title = "其他功能",
+    Description = "自动售货机、开锁辅助、无限耐力、自动开门、普京比例、无坠落伤害（左） | 近战光环（右）",
+    Icon = "rbxassetid://7733960981"
+})
+
+local OtherLeft = TabOther:NewSection({ Title = "杂项功能", Icon = "rbxassetid://7743869054", Position = "Left" })
+OtherLeft:NewToggle({
+    Title = "自动售货机",
+    Default = false,
+    Callback = toggleAutoVending
+})
+OtherLeft:NewDropdown({
+    Title = "售货机物品",
+    Data = {"snack","soda"},
+    Default = "snack",
+    Callback = function(v) SelectedVendingItem = v end
+})
+OtherLeft:NewToggle({
+    Title = "无限耐力",
+    Default = false,
+    Callback = function(v)
+        InfiniteStaminaEnabled = v
+        if v then SetupInfiniteStamina() elseif staminaLoop then staminaLoop:Disconnect(); staminaLoop = nil end
+    end
+})
+OtherLeft:NewToggle({
+    Title = "自动开门",
+    Default = false,
+    Callback = ToggleAutoOpenDoors
+})
+OtherLeft:NewToggle({
+    Title = "拉伸开锁条",
+    Default = false,
+    Callback = function(v) LockpickStretchEnabled = v; updateLockpickBars() end
+})
+OtherLeft:NewToggle({
+    Title = "自动解锁保险箱",
+    Default = false,
+    Callback = function(v) AutoUnlockSafeEnabled = v; if v then startAutoUnlockSafe() else stopAutoUnlockSafe() end end
+})
+OtherLeft:NewButton({
+    Title = "普京比例",
+    Callback = applyPutinRatio
+})
+OtherLeft:NewButton({
+    Title = "恢复比例",
+    Callback = resetRatio
+})
+OtherLeft:NewToggle({
+    Title = "无坠落伤害",
+    Default = false,
+    Callback = function(v)
+        getgenv().NoFallDamage = v
+        if v then setupNoFallDamage() end
+    end
+})
+
+local OtherRight = TabOther:NewSection({ Title = "近战光环", Icon = "rbxassetid://7743869054", Position = "Right" })
+OtherRight:NewToggle({
+    Title = "近战光环",
+    Default = false,
+    Callback = ToggleMeleeAura
+})
+OtherRight:NewSlider({
+    Title = "光环距离",
+    Min = 1,
+    Max = 20,
+    Default = MeleeAuraSettings.Distance,
+    Callback = function(v) MeleeAuraSettings.Distance = v end
+})
+OtherRight:NewDropdown({
+    Title = "目标部位",
+    Data = {"Random", "Head", "Torso", "Right Arm", "Left Arm", "Right Leg", "Left Leg"},
+    Default = "Random",
+    Callback = function(v) MeleeAuraSettings.TargetPart = v end
+})
+OtherRight:NewToggle({
+    Title = "显示动画",
+    Default = MeleeAuraSettings.ShowAnim,
+    Callback = function(v) MeleeAuraSettings.ShowAnim = v end
+})
+OtherRight:NewToggle({
+    Title = "忽略队友",
+    Default = MeleeAuraSettings.CheckTeam,
+    Callback = function(v) MeleeAuraSettings.CheckTeam = v end
+})
+OtherRight:NewToggle({
+    Title = "检查白名单",
+    Default = MeleeAuraSettings.CheckWhitelist,
+    Callback = function(v) MeleeAuraSettings.CheckWhitelist = v end
+})
+
+-- 脚本标签页
+local TabScripts = Windows:NewTab({
+    Title = "脚本",
+    Description = "加载外部脚本",
+    Icon = "rbxassetid://7733960981"
+})
+local ScriptsLeft = TabScripts:NewSection({ Title = "外部脚本", Icon = "rbxassetid://7743869054", Position = "Left" })
+ScriptsLeft:NewButton({
+    Title = "执行飞行脚本",
+    Callback = function()
+        local s, e = pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/nwjca/-fly/refs/heads/main/新版农民飞行"))() end)
+        if s then Windows:Notification("飞行脚本加载成功") else Windows:Notification("失败: "..tostring(e)) end
+    end
+})
+
+-- Rage 标签页（新）
+local TabRage = Windows:NewTab({
+    Title = "rage",
+    Description = "Ragebot 完整功能",
+    Icon = "rbxassetid://7733960981"
+})
+
+local LeftRage = TabRage:NewSection({ Title = "核心设置", Icon = "rbxassetid://7743869054", Position = "Left" })
+LeftRage:NewToggle({
+    Title = "启用 Ragebot",
+    Default = ConfigTable.Ragebot.Enabled,
+    Callback = function(v) ConfigTable.Ragebot.Enabled = v end
+})
+LeftRage:NewToggle({
+    Title = "快速射击 (RapidFire)",
+    Default = ConfigTable.Ragebot.RapidFire,
+    Callback = function(v) ConfigTable.Ragebot.RapidFire = v end
+})
+LeftRage:NewSlider({
+    Title = "射速 (FireRate)",
+    Min = 1,
+    Max = 100,
+    Default = ConfigTable.Ragebot.FireRate,
+    Callback = function(v) ConfigTable.Ragebot.FireRate = v end
+})
+LeftRage:NewToggle({
+    Title = "预测 (Prediction)",
+    Default = ConfigTable.Ragebot.Prediction,
+    Callback = function(v) ConfigTable.Ragebot.Prediction = v end
+})
+LeftRage:NewSlider({
+    Title = "预测量",
+    Min = 0,
+    Max = 0.5,
+    Default = ConfigTable.Ragebot.PredictionAmount,
+    Callback = function(v) ConfigTable.Ragebot.PredictionAmount = v end
+})
+LeftRage:NewToggle({
+    Title = "忽略队友",
+    Default = ConfigTable.Ragebot.TeamCheck,
+    Callback = function(v) ConfigTable.Ragebot.TeamCheck = v end
+})
+LeftRage:NewToggle({
+    Title = "可见性检查",
+    Default = ConfigTable.Ragebot.VisibilityCheck,
+    Callback = function(v) ConfigTable.Ragebot.VisibilityCheck = v end
+})
+LeftRage:NewToggle({
+    Title = "墙射 (Wallbang)",
+    Default = ConfigTable.Ragebot.Wallbang,
+    Callback = function(v) ConfigTable.Ragebot.Wallbang = v end
+})
+LeftRage:NewSlider({
+    Title = "墙射射出范围",
+    Min = 1,
+    Max = 50,
+    Default = ConfigTable.Ragebot.ShootRange,
+    Callback = function(v) ConfigTable.Ragebot.ShootRange = v end
+})
+LeftRage:NewSlider({
+    Title = "墙射命中范围",
+    Min = 1,
+    Max = 50,
+    Default = ConfigTable.Ragebot.HitRange,
+    Callback = function(v) ConfigTable.Ragebot.HitRange = v end
+})
+LeftRage:NewToggle({
+    Title = "自动装填",
+    Default = ConfigTable.Ragebot.AutoReload,
+    Callback = function(v) ConfigTable.Ragebot.AutoReload = v; autoReload() end
+})
+LeftRage:NewToggle({
+    Title = "低血量忽略",
+    Default = ConfigTable.Ragebot.LowHealthCheck,
+    Callback = function(v) ConfigTable.Ragebot.LowHealthCheck = v end
+})
+LeftRage:NewToggle({
+    Title = "忽略好友",
+    Default = ConfigTable.Ragebot.FriendCheck,
+    Callback = function(v) ConfigTable.Ragebot.FriendCheck = v end
+})
+LeftRage:NewSlider({
+    Title = "最大目标数 (0=不限)",
+    Min = 0,
+    Max = 10,
+    Default = ConfigTable.Ragebot.MaxTarget,
+    Callback = function(v) ConfigTable.Ragebot.MaxTarget = v end
+})
+
+local RightRage = TabRage:NewSection({ Title = "视觉与辅助", Icon = "rbxassetid://7743869054", Position = "Right" })
+RightRage:NewToggle({
+    Title = "弹道轨迹 (Tracers)",
+    Default = ConfigTable.Ragebot.Tracers,
+    Callback = function(v) ConfigTable.Ragebot.Tracers = v end
+})
+RightRage:NewSlider({
+    Title = "轨迹宽度",
+    Min = 1,
+    Max = 10,
+    Default = ConfigTable.Ragebot.TracerWidth,
+    Callback = function(v) ConfigTable.Ragebot.TracerWidth = v end
+})
+RightRage:NewSlider({
+    Title = "轨迹持续时间",
+    Min = 1,
+    Max = 10,
+    Default = ConfigTable.Ragebot.TracerLifetime,
+    Callback = function(v) ConfigTable.Ragebot.TracerLifetime = v end
+})
+RightRage:NewDropdown({
+    Title = "轨迹纹理",
+    Data = {"rbxassetid://7136858729", "rbxassetid://6060542021", "rbxassetid://446111271", "rbxassetid://875688442"},
+    Default = ConfigTable.Ragebot.TracerTexture,
+    Callback = function(v) ConfigTable.Ragebot.TracerTexture = v end
+})
+RightRage:NewToggle({
+    Title = "命中提示框",
+    Default = ConfigTable.Ragebot.HitNotify,
+    Callback = function(v) ConfigTable.Ragebot.HitNotify = v end
+})
+RightRage:NewSlider({
+    Title = "提示框显示时间",
+    Min = 1,
+    Max = 10,
+    Default = ConfigTable.Ragebot.HitNotifyDuration,
+    Callback = function(v) ConfigTable.Ragebot.HitNotifyDuration = v end
+})
+RightRage:NewToggle({
+    Title = "命中音效",
+    Default = ConfigTable.Ragebot.HitSound,
+    Callback = function(v) ConfigTable.Ragebot.HitSound = v end
+})
+RightRage:NewDropdown({
+    Title = "音效类型",
+    Data = {"Skeet","Neverlose","Fatality","Argo","Bameware","Bell","Bubble","Pop","Rust","Sans","Minecraft","xp"},
+    Default = ConfigTable.Ragebot.SelectedHitSound,
+    Callback = function(v) ConfigTable.Ragebot.SelectedHitSound = v end
+})
+RightRage:NewToggle({
+    Title = "启用目标列表",
+    Default = ConfigTable.Ragebot.UseTargetList,
+    Callback = function(v) ConfigTable.Ragebot.UseTargetList = v end
+})
+RightRage:NewToggle({
+    Title = "启用白名单",
+    Default = ConfigTable.Ragebot.UseWhitelist,
+    Callback = function(v) ConfigTable.Ragebot.UseWhitelist = v end
+})
+RightRage:NewDropdown({
+    Title = "目标列表 (多选)",
+    Data = (function()
+        local t = {}
+        for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(t, p.Name) end end
+        return t
+    end)(),
+    Default = {},
+    Multi = true,
+    Callback = function(v) RagebotTargetList = v end
+})
+RightRage:NewDropdown({
+    Title = "白名单 (多选)",
+    Data = (function()
+        local t = {}
+        for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(t, p.Name) end end
+        return t
+    end)(),
+    Default = {},
+    Multi = true,
+    Callback = function(v) RagebotWhitelist = v end
+})
+RightRage:NewParagraph({
+    Title = "快捷键",
+    Description = "当前快捷键: E (无法修改)"
+})
+
+-- 动作标签页（包含十个R6动作）
+local TabActions = Windows:NewTab({
+    Title = "动作",
+    Description = "表情与姿势",
+    Icon = "rbxassetid://7733960981"
+})
+local ActionsLeft = TabActions:NewSection({ Title = "表情动作", Icon = "rbxassetid://7743869054", Position = "Left" })
+
+-- 原有动作
+ActionsLeft:NewButton({
+    Title = "跳舞 (/e dance)",
+    Callback = function()
+        local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+        if chatEvent and chatEvent:FindFirstChild("SayMessageRequest") then
+            chatEvent.SayMessageRequest:FireServer("/e dance", "All")
+            Windows:Notification("已发送 /e dance")
+        else Windows:Notification("聊天系统不可用") end
+    end
+})
+ActionsLeft:NewToggle({
+    Title = "头部朝天锁定",
+    Default = false,
+    Callback = function(v) HeadLookUpEnabled = v; updateHeadLookUp() end
+})
+ActionsLeft:NewToggle({
+    Title = "趴下姿势",
+    Default = false,
+    Callback = function(v) ProneEnabled = v; applyProne(v) end
+})
+ActionsLeft:NewToggle({
+    Title = "ccb动作",
+    Description = "胸部前倾45°，右臂向下170°+内收10°",
+    Default = false,
+    Callback = function(v) CcbEnabled = v; applyCcb(v) end
+})
+
+-- 十个R6动作按钮
+ActionsLeft:NewButton({
+    Title = "姿势1: 双手举高",
+    Callback = function() applyPose(1) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势2: 向前弯腰",
+    Callback = function() applyPose(2) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势3: 踢右腿",
+    Callback = function() applyPose(3) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势4: 踢左腿",
+    Callback = function() applyPose(4) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势5: 敬礼",
+    Callback = function() applyPose(5) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势6: 投降",
+    Callback = function() applyPose(6) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势7: 扎马步",
+    Callback = function() applyPose(7) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势8: 向后弯腰",
+    Callback = function() applyPose(8) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势9: 伸懒腰",
+    Callback = function() applyPose(9) end
+})
+ActionsLeft:NewButton({
+    Title = "姿势10: 站立恢复",
+    Callback = function() applyPose(10) end
+})
+
+-- 沉默的标签页
+local TabSilent = Windows:NewTab({
+    Title = "沉默的",
+    Description = "自瞄与音效",
+    Icon = "rbxassetid://7733960981"
+})
+local SilentLeft = TabSilent:NewSection({ Title = "自瞄设置", Icon = "rbxassetid://7743869054", Position = "Left" })
+SilentLeft:NewToggle({
+    Title = "Silent Aim",
+    Default = SilentAimSettings.Enabled,
+    Callback = function(v) SilentAimSettings.Enabled = v; FOVCircle.Visible = v and SilentAimSettings.DrawCircle end
+})
+SilentLeft:NewToggle({
+    Title = "Check Whitelist",
+    Default = SilentAimSettings.CheckWhitelist,
+    Callback = function(v) SilentAimSettings.CheckWhitelist = v end
+})
+SilentLeft:NewToggle({
+    Title = "Wall Check",
+    Default = SilentAimSettings.CheckWall,
+    Callback = function(v) SilentAimSettings.CheckWall = v end
+})
+SilentLeft:NewToggle({
+    Title = "Use Hit Chance",
+    Default = SilentAimSettings.UseHitChance,
+    Callback = function(v) SilentAimSettings.UseHitChance = v end
+})
+SilentLeft:NewToggle({
+    Title = "Check Team",
+    Default = SilentAimSettings.CheckTeam,
+    Callback = function(v) SilentAimSettings.CheckTeam = v end
+})
+SilentLeft:NewToggle({
+    Title = "Draw Circle",
+    Default = SilentAimSettings.DrawCircle,
+    Callback = function(v) SilentAimSettings.DrawCircle = v; FOVCircle.Visible = SilentAimSettings.Enabled and v end
+})
+SilentLeft:NewSlider({
+    Title = "FOV",
+    Min = 20, Max = 500, Default = SilentAimSettings.DrawSize,
+    Callback = function(v) SilentAimSettings.DrawSize = v end
+})
+SilentLeft:NewDropdown({
+    Title = "Target Part",
+    Data = {"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg","Random"},
+    Default = "Head",
+    Callback = function(v) SilentAimSettings.TargetPart = v end
+})
+SilentLeft:NewSlider({
+    Title = "Hit Chance",
+    Min = 1, Max = 100, Default = SilentAimSettings.HitChance,
+    Callback = function(v) SilentAimSettings.HitChance = v end
+})
+SilentLeft:NewToggle({
+    Title = "击打音效",
+    Default = HitSoundEnabled,
+    Callback = function(v) HitSoundEnabled = v end
+})
+SilentLeft:NewInput({
+    Title = "音效ID",
+    Default = HitSoundId,
+    Placeholder = "rbxassetid://...",
+    Callback = function(v) if v and v~="" then HitSoundId = v end end
+})
+SilentLeft:NewDropdown({
+    Title = "Whitelist",
+    Data = (function()
+        local t = {}
+        for _,p in ipairs(Players:GetPlayers()) do if p~=LocalPlayer then table.insert(t,p.Name) end end
+        return t
+    end)(),
+    Default = {},
+    Multi = true,
+    Callback = function(v) Whitelist = v end
+})
+
+-- 水印标签页
+local TabWatermark = Windows:NewTab({
+    Title = "水印",
+    Description = "屏幕水印控制",
+    Icon = "rbxassetid://7733960981"
+})
+local WatermarkLeft = TabWatermark:NewSection({ Title = "水印设置", Icon = "rbxassetid://7743869054", Position = "Left" })
+WatermarkLeft:NewToggle({
+    Title = "显示水印",
+    Default = true,
+    Callback = function(v) MyWatermark:SetVisible(v) end
+})
+
+Windows:Notification("农民cr 整合版加载完成（绿色主题+十R6动作）")
